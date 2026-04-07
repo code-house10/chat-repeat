@@ -18,6 +18,9 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Hide default video controls, we use custom ones */
+        video::-webkit-media-controls { display: none !important; }
     </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col overflow-hidden">
@@ -28,7 +31,7 @@
             <div class="bg-blue-600 text-white p-2 rounded-lg" id="icon-languages"></div>
             <div>
                 <h1 class="text-xl font-bold text-white tracking-tight">English Learning Studio</h1>
-                <p class="text-xs text-slate-400">Master listening & speaking through context</p>
+                <p class="text-xs text-slate-400">Master listening & speaking with native HTML5 & VTT</p>
             </div>
         </div>
         
@@ -46,8 +49,13 @@
         <section class="w-full lg:w-3/5 flex flex-col border-r border-slate-800 relative bg-black">
             
             <!-- Video Container -->
-            <div class="relative w-full pb-[56.25%] bg-black shadow-lg">
-                <div id="yt-player" class="absolute top-0 left-0 w-full h-full"></div>
+            <div class="relative w-full pb-[56.25%] bg-black shadow-lg cursor-pointer" onclick="togglePlay()">
+                <!-- Native HTML5 Video Element -->
+                <video id="html5-player" class="absolute top-0 left-0 w-full h-full object-contain" playsinline crossorigin="anonymous">
+                    <!-- Open source demo video -->
+                    <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4" type="video/mp4">
+                    Your browser does not support HTML5 video.
+                </video>
             </div>
 
             <!-- Core Controls Section -->
@@ -65,10 +73,17 @@
                     </div>
                 </div>
 
-                <!-- Custom Video Input -->
-                <div class="flex flex-1 max-w-md gap-2 bg-slate-800 p-1.5 rounded-lg border border-slate-700 shadow-inner mx-4">
-                    <input type="text" id="custom-yt-url" placeholder="Paste your own YouTube Link here..." class="w-full bg-transparent text-sm text-white px-3 outline-none placeholder-slate-500" />
-                    <button onclick="loadCustomVideo()" class="bg-blue-600 hover:bg-blue-500 text-xs px-4 py-1.5 rounded text-white transition-colors font-medium">Load Video</button>
+                <!-- Local File Uploads for Video & VTT -->
+                <div class="flex flex-1 flex-col gap-2 max-w-md mx-4">
+                    <div class="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700 shadow-inner">
+                        <span class="text-[10px] uppercase font-bold text-slate-500 px-2 w-12 text-center">Video</span>
+                        <input type="file" id="local-video-upload" accept="video/mp4,video/webm,video/ogg" class="w-full text-xs text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600 cursor-pointer" />
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700 shadow-inner">
+                        <span class="text-[10px] uppercase font-bold text-slate-500 px-2 w-12 text-center">Subs</span>
+                        <input type="file" id="local-vtt-upload" accept=".vtt,.srt" class="w-full text-xs text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600 cursor-pointer" />
+                        <button onclick="loadLocalMedia()" class="bg-emerald-600 hover:bg-emerald-500 text-xs px-3 py-1 rounded text-white transition-colors font-medium whitespace-nowrap">Load Files</button>
+                    </div>
                 </div>
 
                 <div id="context-controls" class="flex gap-2 hidden">
@@ -137,21 +152,17 @@
         document.getElementById('play-pause-btn').innerHTML = icons.play;
 
         // --- State Variables ---
-        const DEMO_VIDEO_ID = 'UF8uR6Z6KLc';
-        const subtitles = [
+        // Initial fallback subtitles representing a parsed VTT
+        let subtitles = [
             { id: 1, start: 0.0, end: 5.5, text: "I am honored to be with you today at your commencement from one of the finest universities in the world.", ar: "أنا فخور بوجودي معكم اليوم في حفل تخرجكم من واحدة من أفضل جامعات العالم." },
             { id: 2, start: 5.5, end: 9.0, text: "I never graduated from college.", ar: "لم أتخرج من الجامعة أبداً." },
             { id: 3, start: 9.0, end: 12.5, text: "Truth be told, this is the closest I've ever gotten to a college graduation.", ar: "في الحقيقة، هذا أقرب شيء وصلت إليه لحفل تخرج جامعي." },
             { id: 4, start: 12.5, end: 15.5, text: "Today I want to tell you three stories from my life.", ar: "اليوم أريد أن أخبركم بثلاث قصص من حياتي." },
-            { id: 5, start: 15.5, end: 18.0, text: "That's it. No big deal. Just three stories.", ar: "هذا كل شيء. ليس بالأمر الجلل. مجرد ثلاث قصص." },
-            { id: 6, start: 18.0, end: 22.0, text: "The first story is about connecting the dots.", ar: "القصة الأولى تدور حول ربط النقاط." },
-            { id: 7, start: 22.0, end: 26.5, text: "I dropped out of Reed College after the first 6 months, but then stayed around as a drop-in for another 18 months." },
-            { id: 8, start: 26.5, end: 29.0, text: "So why did I drop out?" },
-            { id: 9, start: 29.0, end: 34.0, text: "It started before I was born. My biological mother was a young, unwed college graduate student." }
+            { id: 5, start: 15.5, end: 18.0, text: "That's it. No big deal. Just three stories.", ar: "هذا كل شيء. ليس بالأمر الجلل. مجرد ثلاث قصص." }
         ];
 
-        let player;
-        let timerId;
+        const videoElement = document.getElementById('html5-player');
+        
         let currentTime = 0;
         let isPlaying = false;
         let currentSpeed = 1;
@@ -163,7 +174,7 @@
         let aiTranslations = {};
         
         try {
-            // Safe storage access prevents crashes in sandbox preview environments
+            // Safe storage access
             savedLines = JSON.parse(localStorage.getItem('english_studio_saved') || '[]');
             aiTranslations = JSON.parse(localStorage.getItem('english_studio_ai_translations') || '{}');
         } catch (e) {
@@ -171,58 +182,30 @@
         }
         
         let isTranslating = {};
-        
         let loopState = { active: false, subtitleId: null, currentLoops: 0, maxLoops: 3 };
 
-        // --- Safe Storage Helper ---
         function saveToStorage(key, data) {
             try { localStorage.setItem(key, JSON.stringify(data)); } catch (e) {}
         }
 
-        // --- YouTube API Integration ---
-        const tag = document.createElement('script');
-        tag.src = 'https://www.youtube.com/iframe_api';
-        const firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        // --- HTML5 Video Event Listeners ---
+        videoElement.addEventListener('play', () => {
+            isPlaying = true;
+            document.getElementById('play-pause-btn').innerHTML = icons.pause;
+        });
 
-        window.onYouTubeIframeAPIReady = function() {
-            player = new YT.Player('yt-player', {
-                height: '100%',
-                width: '100%',
-                videoId: DEMO_VIDEO_ID,
-                playerVars: {
-                    playsinline: 1,
-                    controls: 1,
-                    rel: 0,
-                    modestbranding: 1
-                },
-                events: {
-                    'onStateChange': onPlayerStateChange
-                }
-            });
-        };
+        videoElement.addEventListener('pause', () => {
+            isPlaying = false;
+            document.getElementById('play-pause-btn').innerHTML = icons.play;
+        });
 
-        function onPlayerStateChange(event) {
-            isPlaying = (event.data === YT.PlayerState.PLAYING);
-            document.getElementById('play-pause-btn').innerHTML = isPlaying ? icons.pause : icons.play;
-            
-            if (isPlaying) {
-                if(timerId) clearInterval(timerId);
-                timerId = setInterval(trackTime, 100);
-            } else {
-                clearInterval(timerId);
-            }
-        }
+        videoElement.addEventListener('timeupdate', () => {
+            currentTime = videoElement.currentTime;
+            handleLoop();
+            updateActiveSubtitle();
+        });
 
         // --- Core Logic ---
-        function trackTime() {
-            if (player && player.getCurrentTime) {
-                currentTime = player.getCurrentTime();
-                handleLoop();
-                updateActiveSubtitle();
-            }
-        }
-
         function handleLoop() {
             if (!loopState.active || !loopState.subtitleId) return;
             const targetSub = subtitles.find(s => s.id === loopState.subtitleId);
@@ -230,12 +213,12 @@
 
             if (currentTime >= targetSub.end - 0.1) {
                 if (loopState.currentLoops < loopState.maxLoops - 1) {
-                    player.seekTo(targetSub.start);
+                    videoElement.currentTime = targetSub.start;
                     loopState.currentLoops++;
-                    updateContextControls(); // Update loop counter UI
+                    updateContextControls(targetSub); // Update loop counter UI
                 } else {
                     loopState = { active: false, subtitleId: null, currentLoops: 0, maxLoops: 3 };
-                    updateContextControls();
+                    updateContextControls(targetSub);
                 }
             }
         }
@@ -262,55 +245,101 @@
             }
         }
 
+        // --- Subtitle Parsing (.VTT / .SRT) ---
+        function parseSubtitles(text) {
+            const lines = text.trim().split(/[\r\n]+/);
+            const parsedSubs = [];
+            let currentSub = null;
+            let idCounter = 1;
+
+            // Regex for 00:00:00.000 or 00:00.000 or 00:00:00,000 (SRT format)
+            const timeRegex = /(\d{2}:)?(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(\d{2}:)?(\d{2}):(\d{2})[.,](\d{3})/;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Skip metadata
+                if (line === "WEBVTT" || line === "" || /^\d+$/.test(line)) continue; 
+
+                const timeMatch = line.match(timeRegex);
+                if (timeMatch) {
+                    currentSub = { id: idCounter++, start: 0, end: 0, text: "", ar: "" };
+                    
+                    // Parse start time
+                    const h1 = timeMatch[1] ? parseInt(timeMatch[1]) : 0;
+                    const m1 = parseInt(timeMatch[2]);
+                    const s1 = parseInt(timeMatch[3]);
+                    const ms1 = parseInt(timeMatch[4]);
+                    currentSub.start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000;
+
+                    // Parse end time
+                    const h2 = timeMatch[5] ? parseInt(timeMatch[5]) : 0;
+                    const m2 = parseInt(timeMatch[6]);
+                    const s2 = parseInt(timeMatch[7]);
+                    const ms2 = parseInt(timeMatch[8]);
+                    currentSub.end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000;
+                    
+                    parsedSubs.push(currentSub);
+                } else if (currentSub) {
+                    // It's text belonging to the cue
+                    // Clean HTML tags often found in VTT (e.g. <b>, <i>)
+                    const cleanText = line.replace(/<[^>]+>/g, '');
+                    if (currentSub.text) currentSub.text += " " + cleanText;
+                    else currentSub.text = cleanText;
+                }
+            }
+            return parsedSubs;
+        }
+
         // --- Interactions ---
-        window.loadCustomVideo = function() {
-            const urlInput = document.getElementById('custom-yt-url').value;
-            let videoId = '';
-            
-            // Extract video ID from standard YouTube links
-            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-            const match = urlInput.match(regExp);
-            if (match && match[2].length === 11) {
-                videoId = match[2];
-            } else {
-                alert('Please enter a valid YouTube link.');
-                return;
+        window.loadLocalMedia = function() {
+            const videoInput = document.getElementById('local-video-upload');
+            const vttInput = document.getElementById('local-vtt-upload');
+
+            if (videoInput.files.length > 0) {
+                const fileURL = URL.createObjectURL(videoInput.files[0]);
+                videoElement.src = fileURL;
+                videoElement.load();
             }
 
-            if (player) {
-                player.loadVideoById(videoId);
-                document.getElementById('current-subtitle-container').innerHTML = `
-                    <div class="text-slate-500 flex flex-col items-center gap-3">
-                        <p class="text-lg text-white font-medium">Custom video loaded!</p>
-                        <p class="text-sm">Note: Because downloading foreign subtitles is blocked by YouTube's servers, the right sidebar script remains attached to the demo for practice.</p>
-                    </div>`;
+            if (vttInput.files.length > 0) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const text = e.target.result;
+                    const newSubs = parseSubtitles(text);
+                    if (newSubs.length > 0) {
+                        subtitles = newSubs;
+                        renderTranscript();
+                        alert(`Successfully loaded ${subtitles.length} subtitle cues!`);
+                    } else {
+                        alert('Could not parse subtitles. Ensure it is a valid .vtt or .srt file.');
+                    }
+                };
+                reader.readAsText(vttInput.files[0]);
             }
         }
 
         window.togglePlay = function() {
-            if (!player) return;
-            if (isPlaying) player.pauseVideo();
-            else player.playVideo();
+            if (videoElement.paused) videoElement.play();
+            else videoElement.pause();
         }
 
         window.jumpToTime = function(seconds) {
-            if (!player) return;
-            player.seekTo(seconds);
-            player.playVideo();
+            videoElement.currentTime = seconds;
+            videoElement.play();
         }
 
         window.changeSpeed = function(speed) {
-            if (!player) return;
-            player.setPlaybackRate(speed);
+            videoElement.playbackRate = speed;
             currentSpeed = speed;
             renderSpeedControls();
         }
 
         window.startLoop = function(id, maxLoops = 3) {
             const sub = subtitles.find(s => s.id === id);
-            if (sub && player) {
-                player.seekTo(sub.start);
-                player.playVideo();
+            if (sub) {
+                videoElement.currentTime = sub.start;
+                videoElement.play();
                 loopState = { active: true, subtitleId: id, currentLoops: 0, maxLoops: maxLoops };
                 updateContextControls(sub);
             }
@@ -489,11 +518,9 @@
                         <p class="text-xl md:text-2xl text-amber-400 font-arabic font-medium leading-relaxed drop-shadow-sm" dir="rtl">
                             ${translationText}
                         </p>
-                        ${sub.ar && !aiTranslations[sub.id] ? `
-                            <button onclick="translateContextually(${sub.id})" ${isTranslating[sub.id] ? 'disabled' : ''} class="text-xs text-slate-500 hover:text-purple-400 flex items-center justify-center gap-1 transition-colors mt-1 mx-auto" title="Generate a new translation taking surrounding sentences into account">
-                                ${isTranslating[sub.id] ? icons.loader : icons.sparkles} AI Enhance
-                            </button>
-                        ` : ''}
+                        <button onclick="translateContextually(${sub.id})" ${isTranslating[sub.id] ? 'disabled' : ''} class="text-xs text-slate-500 hover:text-purple-400 flex items-center justify-center gap-1 transition-colors mt-1 mx-auto" title="Generate a new translation taking surrounding sentences into account">
+                            ${isTranslating[sub.id] ? icons.loader : icons.sparkles} AI Enhance
+                        </button>
                     `;
                 } else {
                     translationHtml = `

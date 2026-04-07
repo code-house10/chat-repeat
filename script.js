@@ -1,4 +1,5 @@
 const video = document.getElementById("learningVideo");
+const subtitleOverlay = document.getElementById("subtitleOverlay");
 
 const currentEnglishEl = document.getElementById("currentEnglish");
 const currentArabicEl = document.getElementById("currentArabic");
@@ -29,68 +30,33 @@ const scrollToSavedBtn = document.getElementById("scrollToSavedBtn");
 
 const videoFileInput = document.getElementById("videoFileInput");
 const subtitleFileInput = document.getElementById("subtitleFileInput");
-
 const videoUrlInput = document.getElementById("videoUrlInput");
-const sourceTypeSelect = document.getElementById("sourceType");
 const loadVideoUrlBtn = document.getElementById("loadVideoUrlBtn");
-
-const html5PlayerWrap = document.getElementById("html5PlayerWrap");
-const youtubePlayerWrap = document.getElementById("youtubePlayerWrap");
 
 const STORAGE_KEY = "movieEnglishTrainerSavedSubtitles";
 
-let textTrack = null;
-let cues = [];
-let currentCue = null;
+let subtitles = [];
 let currentCueIndex = -1;
-
-let activeCueId = null;
+let currentCue = null;
 let repeatCycleCount = 0;
 let repeatTarget = Number(repeatCountSelect.value);
-let isAutoRepeatingNow = false;
-let shadowPauseTimeout = null;
-
-let youtubePlayer = null;
-let currentSourceMode = "direct";
-let currentSubtitleBlobUrl = null;
+let isRepeating = false;
 
 const arabicDictionary = {
   "how are you?": "إزيك؟ / عامل إيه؟",
   "i'm fine.": "أنا بخير.",
   "are you serious?": "إنت بتتكلم بجد؟",
   "you've got to be kidding me.": "إنت أكيد بتهزر / مستحيل بجد.",
-  "come on!": "يا عم بقى / هيا بقى / بلاش كده.",
+  "come on!": "يلا بقى / بلاش كده.",
   "let's go.": "يلا بينا.",
   "what are you doing?": "إنت بتعمل إيه؟",
   "i don't know.": "أنا مش عارف.",
   "thank you.": "شكرًا ليك.",
-  "see you later.": "أشوفك بعدين.",
-  "watch out!": "خلي بالك!",
-  "hurry up!": "يلا بسرعة!",
-  "leave me alone.": "سيبني لوحدي.",
-  "that's enough.": "كفاية كده.",
-  "i'm sorry.": "أنا آسف.",
-  "it doesn't matter.": "مش مهم / مش فارقة.",
-  "what's going on?": "إيه اللي بيحصل؟",
-  "i can't believe it.": "مش مصدق ده.",
-  "we need to talk.": "لازم نتكلم.",
-  "it's not your fault.": "ده مش ذنبك."
+  "see you later.": "أشوفك بعدين."
 };
 
 function normalizeText(text) {
-  return (text || "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function escapeHTML(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return (text || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 }
 
 function formatTime(seconds) {
@@ -100,53 +66,193 @@ function formatTime(seconds) {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-function getArabicTranslation(englishText) {
-  const clean = normalizeText(englishText);
-  const lower = clean.toLowerCase();
-
-  if (arabicDictionary[lower]) {
-    return arabicDictionary[lower];
-  }
-
+function getArabicTranslation(text) {
+  const clean = normalizeText(text);
   if (!clean) return "لا توجد ترجمة.";
-
-  return `ترجمة سياقية تقريبية: ${clean}`;
+  return arabicDictionary[clean.toLowerCase()] || `ترجمة سياقية تقريبية: ${clean}`;
 }
 
-function srtTimeToVttTime(timeString) {
-  return timeString.replace(",", ".");
-}
-
-function convertSrtToVtt(srtText) {
-  const normalized = srtText.replace(/\r+/g, "").trim();
-  const lines = normalized.split("\n");
-  const output = ["WEBVTT", ""];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    if (!line) {
-      output.push("");
-      continue;
-    }
-
-    if (/^\d+$/.test(line)) {
-      continue;
-    }
-
-    if (line.includes("-->")) {
-      const convertedTiming = line.replace(
-        /(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/g,
-        (_, start, end) => `${srtTimeToVttTime(start)} --> ${srtTimeToVttTime(end)}`
-      );
-      output.push(convertedTiming);
-      continue;
-    }
-
-    output.push(line);
+function updateCueDisplay(cue) {
+  if (!cue) {
+    subtitleOverlay.textContent = "Waiting for subtitle...";
+    currentEnglishEl.textContent = "Waiting for subtitle...";
+    currentArabicEl.textContent = "الترجمة العربية ستظهر هنا";
+    cueStartTimeEl.textContent = "--:--";
+    cueEndTimeEl.textContent = "--:--";
+    return;
   }
 
-  return output.join("\n");
+  const english = normalizeText(cue.text);
+  const arabic = getArabicTranslation(english);
+
+  subtitleOverlay.textContent = english;
+  currentEnglishEl.textContent = english;
+  currentArabicEl.textContent = showArabicToggle.checked ? arabic : "Arabic translation hidden";
+  cueStartTimeEl.textContent = formatTime(cue.start);
+  cueEndTimeEl.textContent = formatTime(cue.end);
+}
+
+function parseTimestampToSeconds(timeString) {
+  const clean = timeString.replace(",", ".").trim();
+  const parts = clean.split(":");
+  if (parts.length !== 3) return 0;
+
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+  const seconds = Number(parts[2]);
+
+  return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+function parseSrt(text) {
+  const normalized = text.replace(/\r/g, "").trim();
+  const blocks = normalized.split(/\n\s*\n/);
+  const result = [];
+
+  for (const block of blocks) {
+    const lines = block.split("\n").map(line => line.trim()).filter(Boolean);
+    if (lines.length < 2) continue;
+
+    let timeLineIndex = 0;
+    if (/^\d+$/.test(lines[0])) {
+      timeLineIndex = 1;
+    }
+
+    const timeLine = lines[timeLineIndex];
+    if (!timeLine || !timeLine.includes("-->")) continue;
+
+    const [startRaw, endRaw] = timeLine.split("-->").map(v => v.trim());
+    const cueText = lines.slice(timeLineIndex + 1).join(" ");
+
+    result.push({
+      start: parseTimestampToSeconds(startRaw),
+      end: parseTimestampToSeconds(endRaw),
+      text: cueText
+    });
+  }
+
+  return result;
+}
+
+function parseVtt(text) {
+  const normalized = text.replace(/\r/g, "").replace(/^WEBVTT\s*/i, "").trim();
+  const blocks = normalized.split(/\n\s*\n/);
+  const result = [];
+
+  for (const block of blocks) {
+    const lines = block.split("\n").map(line => line.trim()).filter(Boolean);
+    if (!lines.length) continue;
+
+    let timeLineIndex = 0;
+    if (!lines[0].includes("-->") && lines[1] && lines[1].includes("-->")) {
+      timeLineIndex = 1;
+    }
+
+    const timeLine = lines[timeLineIndex];
+    if (!timeLine || !timeLine.includes("-->")) continue;
+
+    const [startRaw, endRaw] = timeLine.split("-->").map(v => v.trim().split(" ")[0]);
+    const cueText = lines.slice(timeLineIndex + 1).join(" ");
+
+    result.push({
+      start: parseTimestampToSeconds(startRaw),
+      end: parseTimestampToSeconds(endRaw),
+      text: cueText
+    });
+  }
+
+  return result;
+}
+
+function loadSubtitleText(text, extension) {
+  if (extension === "srt") {
+    subtitles = parseSrt(text);
+  } else {
+    subtitles = parseVtt(text);
+  }
+
+  currentCueIndex = -1;
+  currentCue = null;
+  repeatCycleCount = 0;
+  repeatProgressEl.textContent = "0";
+  updateCueDisplay(null);
+
+  alert(`Subtitle loaded. Cues found: ${subtitles.length}`);
+}
+
+function findCurrentCueIndex(currentTime) {
+  for (let i = 0; i < subtitles.length; i++) {
+    const cue = subtitles[i];
+    if (currentTime >= cue.start && currentTime <= cue.end) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function handleTimeUpdate() {
+  if (!subtitles.length) return;
+
+  const time = video.currentTime;
+  const newIndex = findCurrentCueIndex(time);
+
+  if (newIndex === -1) {
+    return;
+  }
+
+  const cue = subtitles[newIndex];
+
+  if (newIndex !== currentCueIndex) {
+    currentCueIndex = newIndex;
+    currentCue = cue;
+    repeatCycleCount = 0;
+    repeatProgressEl.textContent = "0";
+    isRepeating = false;
+    updateCueDisplay(cue);
+  }
+
+  if (!autoRepeatToggle.checked || !currentCue) return;
+
+  if (time >= currentCue.end - 0.05) {
+    if (repeatCycleCount < repeatTarget - 1) {
+      repeatCycleCount += 1;
+      repeatProgressEl.textContent = String(repeatCycleCount);
+      isRepeating = true;
+      video.currentTime = currentCue.start + 0.01;
+      video.play();
+    } else if (isRepeating) {
+      repeatProgressEl.textContent = String(repeatTarget);
+      isRepeating = false;
+
+      if (shadowingToggle.checked) {
+        video.pause();
+      }
+    }
+  }
+}
+
+function replayCurrentCue() {
+  if (!currentCue) return;
+  repeatCycleCount = 0;
+  repeatProgressEl.textContent = "0";
+  video.currentTime = currentCue.start + 0.01;
+  video.play();
+}
+
+function goToCue(index) {
+  if (!subtitles.length) return;
+
+  const safeIndex = Math.max(0, Math.min(index, subtitles.length - 1));
+  const cue = subtitles[safeIndex];
+
+  currentCueIndex = safeIndex;
+  currentCue = cue;
+  repeatCycleCount = 0;
+  repeatProgressEl.textContent = "0";
+  updateCueDisplay(cue);
+
+  video.currentTime = cue.start + 0.01;
+  video.play();
 }
 
 function getSavedSubtitles() {
@@ -165,80 +271,42 @@ function updateStats() {
   const items = getSavedSubtitles();
   savedCountStatEl.textContent = items.length;
   difficultCountStatEl.textContent = items.filter(item => item.isDifficult).length;
-  practiceModeStatEl.textContent = shadowingToggle.checked ? "Shadowing" : "Normal";
+  practiceModeStatEl.textContent = "Direct Video";
 }
 
 function renderSavedSubtitles() {
   const items = getSavedSubtitles();
 
   if (!items.length) {
-    savedListEl.innerHTML = `
-      <div class="empty-state">
-        No saved subtitles yet. Start the video and click "Save Subtitle".
-      </div>
-    `;
+    savedListEl.innerHTML = `<div class="empty-state">No saved subtitles yet.</div>`;
     updateStats();
     return;
   }
 
-  savedListEl.innerHTML = items
-    .map((item) => {
-      return `
-        <article class="saved-item">
-          <div class="saved-item-top">
-            <div>
-              <p class="saved-english">${escapeHTML(item.english)}</p>
-              <p class="saved-arabic">${escapeHTML(item.arabic)}</p>
-              ${item.isDifficult ? `<span class="saved-flag">Difficult</span>` : ""}
-            </div>
-            <div class="saved-item-time">${formatTime(item.startTime)}</div>
-          </div>
+  savedListEl.innerHTML = items.map(item => `
+    <article class="saved-item">
+      <div class="saved-item-top">
+        <div>
+          <p class="saved-english">${item.english}</p>
+          <p class="saved-arabic">${item.arabic}</p>
+          ${item.isDifficult ? `<span class="saved-flag">Difficult</span>` : ""}
+        </div>
+        <div class="saved-item-time">${formatTime(item.startTime)}</div>
+      </div>
 
-          <div class="saved-item-actions">
-            <button class="secondary-btn" onclick="jumpToSavedCue(${item.startTime}, ${item.endTime})">
-              Replay
-            </button>
-            <button class="ghost-btn" onclick="removeSavedSubtitle('${item.id}')">
-              Delete
-            </button>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
+      <div class="saved-item-actions">
+        <button class="secondary-btn" onclick="jumpToSavedCue(${item.startTime})">Replay</button>
+        <button class="ghost-btn" onclick="removeSavedSubtitle('${item.id}')">Delete</button>
+      </div>
+    </article>
+  `).join("");
 
   updateStats();
 }
 
-function removeSavedSubtitle(id) {
-  const items = getSavedSubtitles().filter((item) => item.id !== id);
-  setSavedSubtitles(items);
-  renderSavedSubtitles();
-}
-
-window.removeSavedSubtitle = removeSavedSubtitle;
-
-function jumpToSavedCue(startTime, endTime) {
-  if (currentSourceMode !== "direct") {
-    alert("Replay by saved subtitle works best in direct video mode.");
-    return;
-  }
-
-  video.currentTime = Math.max(0, startTime);
-  video.play();
-
-  setTimeout(() => {
-    if (video.currentTime >= endTime) {
-      video.pause();
-    }
-  }, Math.max(300, (endTime - startTime) * 1000));
-}
-
-window.jumpToSavedCue = jumpToSavedCue;
-
 function saveCurrentSubtitle(isDifficult = false) {
   if (!currentCue) {
-    alert("No active subtitle to save yet.");
+    alert("No active subtitle to save.");
     return;
   }
 
@@ -246,14 +314,12 @@ function saveCurrentSubtitle(isDifficult = false) {
   const arabic = getArabicTranslation(english);
 
   const items = getSavedSubtitles();
-
-  const alreadyExists = items.some(
-    (item) =>
-      item.english === english &&
-      Math.abs(item.startTime - currentCue.startTime) < 0.05
+  const exists = items.some(item =>
+    item.english === english &&
+    Math.abs(item.startTime - currentCue.start) < 0.05
   );
 
-  if (alreadyExists) {
+  if (exists) {
     alert("This subtitle is already saved.");
     return;
   }
@@ -262,8 +328,8 @@ function saveCurrentSubtitle(isDifficult = false) {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
     english,
     arabic,
-    startTime: currentCue.startTime,
-    endTime: currentCue.endTime,
+    startTime: currentCue.start,
+    endTime: currentCue.end,
     isDifficult
   });
 
@@ -271,368 +337,34 @@ function saveCurrentSubtitle(isDifficult = false) {
   renderSavedSubtitles();
 }
 
-function updateCueDisplay(cue) {
-  const english = cue ? normalizeText(cue.text) : "Waiting for subtitle...";
-  const arabic = cue ? getArabicTranslation(english) : "الترجمة العربية ستظهر هنا";
-
-  currentEnglishEl.textContent = english;
-  currentArabicEl.textContent = showArabicToggle.checked ? arabic : "Arabic translation hidden";
-  cueStartTimeEl.textContent = cue ? formatTime(cue.startTime) : "--:--";
-  cueEndTimeEl.textContent = cue ? formatTime(cue.endTime) : "--:--";
+function removeSavedSubtitle(id) {
+  const items = getSavedSubtitles().filter(item => item.id !== id);
+  setSavedSubtitles(items);
+  renderSavedSubtitles();
 }
 
-function resetRepeatStateForCue(cue) {
-  if (!cue) return;
-  activeCueId = `${cue.startTime}-${cue.endTime}-${normalizeText(cue.text)}`;
-  repeatCycleCount = 0;
-  repeatProgressEl.textContent = "0";
-  isAutoRepeatingNow = false;
-}
-
-function handleCueChange(cue) {
-  const cueId = cue ? `${cue.startTime}-${cue.endTime}-${normalizeText(cue.text)}` : null;
-
-  if (!cue) {
-    currentCue = null;
-    currentCueIndex = -1;
-    return;
-  }
-
-  const isNewCue = cueId !== activeCueId;
-
-  currentCue = cue;
-  currentCueIndex = cues.findIndex(
-    (item) =>
-      item.startTime === cue.startTime &&
-      item.endTime === cue.endTime &&
-      normalizeText(item.text) === normalizeText(cue.text)
-  );
-
-  if (isNewCue) {
-    resetRepeatStateForCue(cue);
-  }
-
-  updateCueDisplay(cue);
-}
-
-function replayCurrentCueManual() {
-  if (currentSourceMode !== "direct") {
-    alert("Current subtitle replay is available in direct video mode with subtitle cues.");
-    return;
-  }
-
-  if (!currentCue) return;
-  repeatCycleCount = 0;
-  repeatProgressEl.textContent = "0";
-  video.currentTime = Math.max(0, currentCue.startTime + 0.01);
+function jumpToSavedCue(startTime) {
+  video.currentTime = startTime + 0.01;
   video.play();
 }
 
-function goToCueByIndex(index) {
-  if (currentSourceMode !== "direct") {
-    alert("Previous/next subtitle navigation works in direct video mode.");
-    return;
-  }
-
-  if (!cues.length) return;
-  const boundedIndex = Math.max(0, Math.min(index, cues.length - 1));
-  const cue = cues[boundedIndex];
-  currentCue = cue;
-  currentCueIndex = boundedIndex;
-  resetRepeatStateForCue(cue);
-  updateCueDisplay(cue);
-  video.currentTime = Math.max(0, cue.startTime + 0.01);
-  video.play();
-}
-
-function clearAllTracks() {
-  const trackElements = video.querySelectorAll("track");
-  trackElements.forEach((track) => track.remove());
-
-  for (let i = 0; i < video.textTracks.length; i++) {
-    video.textTracks[i].mode = "disabled";
-  }
-
-  textTrack = null;
-  cues = [];
-  currentCue = null;
-  currentCueIndex = -1;
-  activeCueId = null;
-  repeatCycleCount = 0;
-  repeatProgressEl.textContent = "0";
-  updateCueDisplay(null);
-}
-
-function setupTrackFromElement(trackElement) {
-  const loadedTrack = trackElement.track;
-
-  if (!loadedTrack) {
-    console.warn("Track object not available.");
-    return;
-  }
-
-  for (let i = 0; i < video.textTracks.length; i++) {
-    video.textTracks[i].mode = "disabled";
-  }
-
-  textTrack = loadedTrack;
-  textTrack.mode = "showing";
-
-  cues = Array.from(textTrack.cues || []);
-
-  console.log("Loaded cues:", cues.length);
-  if (cues.length > 0) {
-    console.log("First cue starts at:", cues[0].startTime, "seconds");
-  }
-
-  textTrack.oncuechange = () => {
-    const activeCues = textTrack.activeCues;
-    if (activeCues && activeCues.length > 0) {
-      handleCueChange(activeCues[0]);
-    }
-  };
-}
-
-function attachSubtitleFromText(subtitleText) {
-  clearAllTracks();
-
-  if (currentSubtitleBlobUrl) {
-    URL.revokeObjectURL(currentSubtitleBlobUrl);
-    currentSubtitleBlobUrl = null;
-  }
-
-  const subtitleBlob = new Blob([subtitleText], { type: "text/vtt" });
-  currentSubtitleBlobUrl = URL.createObjectURL(subtitleBlob);
-
-  const trackEl = document.createElement("track");
-  trackEl.kind = "subtitles";
-  trackEl.label = "English";
-  trackEl.srclang = "en";
-  trackEl.src = currentSubtitleBlobUrl;
-  trackEl.default = true;
-
-  trackEl.addEventListener("load", () => {
-    setupTrackFromElement(trackEl);
-    console.log("Subtitle track loaded successfully.");
-  });
-
-  trackEl.addEventListener("error", () => {
-    console.error("Subtitle track failed to load.");
-    alert("Subtitle track failed to load.");
-  });
-
-  video.appendChild(trackEl);
-}
-
-function handleAutoRepeatLogic() {
-  if (currentSourceMode !== "direct") return;
-  if (!currentCue || !autoRepeatToggle.checked) return;
-
-  const epsilon = 0.06;
-  const endedCurrentCue = video.currentTime >= currentCue.endTime - epsilon;
-
-  if (!endedCurrentCue) return;
-
-  repeatTarget = Number(repeatCountSelect.value);
-
-  if (repeatCycleCount < repeatTarget - 1) {
-    repeatCycleCount += 1;
-    repeatProgressEl.textContent = String(repeatCycleCount);
-    isAutoRepeatingNow = true;
-
-    video.currentTime = Math.max(0, currentCue.startTime + 0.01);
-    video.play();
-    return;
-  }
-
-  if (repeatCycleCount >= repeatTarget - 1 && isAutoRepeatingNow) {
-    repeatProgressEl.textContent = String(repeatTarget);
-    isAutoRepeatingNow = false;
-
-    if (shadowingToggle.checked) {
-      clearTimeout(shadowPauseTimeout);
-      shadowPauseTimeout = setTimeout(() => {
-        video.pause();
-      }, 180);
-    }
-  }
-}
-
-function isYouTubeUrl(url) {
-  return /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)/i.test(url);
-}
-
-function isDirectVideoUrl(url) {
-  return /\.(mp4|webm|ogg)(\?.*)?$/i.test(url);
-}
-
-function extractYouTubeVideoId(url) {
-  try {
-    const parsed = new URL(url);
-
-    if (parsed.hostname.includes("youtu.be")) {
-      return parsed.pathname.replace("/", "").trim();
-    }
-
-    if (parsed.hostname.includes("youtube.com")) {
-      if (parsed.searchParams.get("v")) {
-        return parsed.searchParams.get("v");
-      }
-
-      const parts = parsed.pathname.split("/");
-      const embedIndex = parts.indexOf("embed");
-      if (embedIndex !== -1 && parts[embedIndex + 1]) {
-        return parts[embedIndex + 1];
-      }
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function setMode(mode) {
-  currentSourceMode = mode;
-
-  if (mode === "youtube") {
-    html5PlayerWrap.classList.add("hidden");
-    youtubePlayerWrap.classList.remove("hidden");
-
-    video.pause();
-    currentCue = null;
-    currentCueIndex = -1;
-    updateCueDisplay(null);
-  } else {
-    youtubePlayerWrap.classList.add("hidden");
-    html5PlayerWrap.classList.remove("hidden");
-  }
-}
-
-function loadDirectVideo(url) {
-  setMode("direct");
-
-  video.src = url;
-  video.load();
-
-  currentCue = null;
-  currentCueIndex = -1;
-  cues = [];
-  updateCueDisplay(null);
-
-  alert("Direct video loaded. For full subtitle learning features, also load a matching .vtt or .srt subtitle file.");
-}
-
-function createOrLoadYouTubePlayer(videoId) {
-  setMode("youtube");
-
-  if (!videoId) {
-    alert("Invalid YouTube link.");
-    return;
-  }
-
-  if (!window.YT || !window.YT.Player) {
-    alert("YouTube API is not ready yet. Please try again.");
-    return;
-  }
-
-  if (youtubePlayer && typeof youtubePlayer.loadVideoById === "function") {
-    youtubePlayer.loadVideoById(videoId);
-    return;
-  }
-
-  youtubePlayer = new YT.Player("youtubePlayer", {
-    videoId,
-    playerVars: {
-      playsinline: 1,
-      rel: 0
-    },
-    events: {
-      onReady: () => {
-        console.log("YouTube player ready");
-      }
-    }
-  });
-}
-
-window.onYouTubeIframeAPIReady = function () {
-  console.log("YouTube IFrame API is ready");
-};
+window.removeSavedSubtitle = removeSavedSubtitle;
+window.jumpToSavedCue = jumpToSavedCue;
 
 function loadVideoFromUrl() {
   const url = videoUrlInput.value.trim();
-  const forcedType = sourceTypeSelect.value;
-
   if (!url) {
-    alert("Please paste a video link first.");
+    alert("Paste a direct video link first.");
     return;
   }
 
-  let detectedType = forcedType;
-
-  if (forcedType === "auto") {
-    if (isYouTubeUrl(url)) {
-      detectedType = "youtube";
-    } else if (isDirectVideoUrl(url)) {
-      detectedType = "direct";
-    } else {
-      detectedType = "unknown";
-    }
-  }
-
-  if (detectedType === "youtube") {
-    const videoId = extractYouTubeVideoId(url);
-    createOrLoadYouTubePlayer(videoId);
-    return;
-  }
-
-  if (detectedType === "direct") {
-    loadDirectVideo(url);
-    return;
-  }
-
-  alert("This link is not recognized as a YouTube link or a direct video file link like .mp4");
+  video.src = url;
+  video.load();
 }
 
-function initControls() {
-  playbackRateSelect.addEventListener("change", () => {
-    if (currentSourceMode === "direct") {
-      video.playbackRate = Number(playbackRateSelect.value);
-    }
-  });
-
-  repeatCountSelect.addEventListener("change", () => {
-    repeatTarget = Number(repeatCountSelect.value);
-    if (currentCue) {
-      resetRepeatStateForCue(currentCue);
-    }
-  });
-
-  showArabicToggle.addEventListener("change", () => {
-    if (currentCue) {
-      updateCueDisplay(currentCue);
-    } else {
-      updateCueDisplay(null);
-    }
-  });
-
-  shadowingToggle.addEventListener("change", () => {
-    updateStats();
-  });
-
-  replaySubtitleBtn.addEventListener("click", replayCurrentCueManual);
-  prevSubtitleBtn.addEventListener("click", () => goToCueByIndex(currentCueIndex - 1));
-  nextSubtitleBtn.addEventListener("click", () => goToCueByIndex(currentCueIndex + 1));
-
-  saveSubtitleBtn.addEventListener("click", () => saveCurrentSubtitle(false));
-  markDifficultBtn.addEventListener("click", () => saveCurrentSubtitle(true));
-
-  clearSavedBtn.addEventListener("click", () => {
-    const confirmed = confirm("Delete all saved subtitles?");
-    if (!confirmed) return;
-    localStorage.removeItem(STORAGE_KEY);
-    renderSavedSubtitles();
-  });
+function init() {
+  renderSavedSubtitles();
+  updateCueDisplay(null);
 
   scrollToPlayerBtn.addEventListener("click", () => {
     document.getElementById("playerSection").scrollIntoView({ behavior: "smooth" });
@@ -642,60 +374,65 @@ function initControls() {
     document.getElementById("savedSection").scrollIntoView({ behavior: "smooth" });
   });
 
-  video.addEventListener("timeupdate", handleAutoRepeatLogic);
+  playbackRateSelect.addEventListener("change", () => {
+    video.playbackRate = Number(playbackRateSelect.value);
+  });
+
+  repeatCountSelect.addEventListener("change", () => {
+    repeatTarget = Number(repeatCountSelect.value);
+    repeatCycleCount = 0;
+    repeatProgressEl.textContent = "0";
+  });
+
+  showArabicToggle.addEventListener("change", () => {
+    updateCueDisplay(currentCue);
+  });
+
+  replaySubtitleBtn.addEventListener("click", replayCurrentCue);
+  prevSubtitleBtn.addEventListener("click", () => goToCue(currentCueIndex - 1));
+  nextSubtitleBtn.addEventListener("click", () => goToCue(currentCueIndex + 1));
+  saveSubtitleBtn.addEventListener("click", () => saveCurrentSubtitle(false));
+  markDifficultBtn.addEventListener("click", () => saveCurrentSubtitle(true));
+
+  clearSavedBtn.addEventListener("click", () => {
+    localStorage.removeItem(STORAGE_KEY);
+    renderSavedSubtitles();
+  });
+
+  loadVideoUrlBtn.addEventListener("click", loadVideoFromUrl);
 
   video.addEventListener("loadedmetadata", () => {
     video.playbackRate = Number(playbackRateSelect.value);
   });
 
+  video.addEventListener("timeupdate", handleTimeUpdate);
+
   videoFileInput.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const objectURL = URL.createObjectURL(file);
-    setMode("direct");
-    video.src = objectURL;
+    const url = URL.createObjectURL(file);
+    video.src = url;
     video.load();
-
-    if (currentSubtitleBlobUrl) {
-      setTimeout(() => {
-        const existingTrack = video.querySelector("track");
-        if (existingTrack) {
-          setupTrackFromElement(existingTrack);
-        }
-      }, 300);
-    }
   });
 
   subtitleFileInput.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const fileName = file.name.toLowerCase();
+    const name = file.name.toLowerCase();
+    const text = await file.text();
 
-    try {
-      let subtitleText = await file.text();
-
-      if (fileName.endsWith(".srt")) {
-        subtitleText = convertSrtToVtt(subtitleText);
-      }
-
-      attachSubtitleFromText(subtitleText);
-      alert("Subtitle file loaded successfully. If your subtitle starts later in the movie, move the video time forward.");
-    } catch (error) {
-      console.error(error);
-      alert("Failed to load subtitle file.");
+    if (name.endsWith(".srt")) {
+      loadSubtitleText(text, "srt");
+    } else if (name.endsWith(".vtt")) {
+      loadSubtitleText(text, "vtt");
+    } else {
+      alert("Use .srt or .vtt subtitle file.");
     }
   });
 
-  loadVideoUrlBtn.addEventListener("click", loadVideoFromUrl);
-}
-
-function init() {
-  renderSavedSubtitles();
   updateStats();
-  updateCueDisplay(null);
-  initControls();
 }
 
 init();
