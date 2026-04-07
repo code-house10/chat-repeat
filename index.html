@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>English Movie Learning MVP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-badge">EN</div>
+        <div>
+          <h1>Movie English Trainer</h1>
+          <p>Practice speaking & listening with subtitle repeat, Arabic translation, and saved review.</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="scrollToPlayerBtn" class="ghost-btn">Start Learning</button>
+        <button id="scrollToSavedBtn" class="primary-btn">Saved Subtitles</button>
+      </div>
+    </header>
+
+    <section class="hero-card">
+      <div class="hero-left">
+        <span class="mini-label">Personal Learning Landing Page</span>
+        <h2>Learn real English from movie scenes</h2>
+        <p>
+          Repeat each subtitle automatically, understand it in Arabic context,
+          save useful lines, and practice shadowing with real dialogue.
+        </p>
+
+        <div class="hero-points">
+          <div class="hero-point">Repeat current subtitle 3 times</div>
+          <div class="hero-point">Arabic meaning in context</div>
+          <div class="hero-point">Save subtitles for revision</div>
+          <div class="hero-point">Slow playback for listening practice</div>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="hero-stat">
+          <span class="hero-stat-label">Saved</span>
+          <span id="savedCountStat" class="hero-stat-value">0</span>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-stat-label">Difficult</span>
+          <span id="difficultCountStat" class="hero-stat-value">0</span>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-stat-label">Practice Mode</span>
+          <span id="practiceModeStat" class="hero-stat-value small">Normal</span>
+        </div>
+      </div>
+    </section>
+
+    <main class="main-grid" id="playerSection">
+      <section class="player-panel card">
+        <div class="section-head">
+          <div>
+            <span class="mini-label">Video Learning</span>
+            <h3>Player</h3>
+          </div>
+
+          <div class="inline-badges">
+            <span class="badge">MVP</span>
+            <span class="badge">HTML5 + YouTube</span>
+          </div>
+        </div>
+
+        <div class="source-switcher">
+          <div class="source-row">
+            <div class="tool-group">
+              <label for="videoUrlInput">Paste video link</label>
+              <input
+                type="text"
+                id="videoUrlInput"
+                placeholder="YouTube link or direct .mp4 link"
+              />
+            </div>
+
+            <div class="tool-group">
+              <label for="sourceType">Source type</label>
+              <select id="sourceType">
+                <option value="auto" selected>Auto detect</option>
+                <option value="youtube">YouTube</option>
+                <option value="direct">Direct video URL</option>
+              </select>
+            </div>
+
+            <div class="tool-group action-group">
+              <label>&nbsp;</label>
+              <button id="loadVideoUrlBtn" class="primary-btn">Load Link</button>
+            </div>
+          </div>
+
+          <p class="upload-note">
+            Use YouTube links for simple embed playback, or direct video links like MP4 for full subtitle control.
+          </p>
+        </div>
+
+        <div class="video-wrap">
+          <div id="html5PlayerWrap">
+            <video id="learningVideo" class="video-player" controls preload="metadata" crossorigin="anonymous">
+              <source src="sample-video.mp4" type="video/mp4" />
+              <track
+                id="englishTrack"
+                label="English"
+                kind="subtitles"
+                srclang="en"
+                src="sample-subtitles.vtt"
+                default
+              />
+              Your browser does not support HTML5 video.
+            </video>
+          </div>
+
+          <div id="youtubePlayerWrap" class="hidden">
+            <div id="youtubePlayer"></div>
+          </div>
+        </div>
+
+        <div class="video-tools">
+          <div class="tool-group">
+            <label for="repeatCount">Repeat current subtitle</label>
+            <select id="repeatCount">
+              <option value="1">1x</option>
+              <option value="2">2x</option>
+              <option value="3" selected>3x</option>
+              <option value="5">5x</option>
+            </select>
+          </div>
+
+          <div class="tool-group">
+            <label for="playbackRate">Playback speed</label>
+            <select id="playbackRate">
+              <option value="0.65">0.65x</option>
+              <option value="0.75">0.75x</option>
+              <option value="0.85">0.85x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.15">1.15x</option>
+            </select>
+          </div>
+
+          <div class="tool-group switch-group">
+            <label for="autoRepeatToggle">Auto repeat cue</label>
+            <input type="checkbox" id="autoRepeatToggle" checked />
+          </div>
+
+          <div class="tool-group switch-group">
+            <label for="showArabicToggle">Show Arabic translation</label>
+            <input type="checkbox" id="showArabicToggle" checked />
+          </div>
+
+          <div class="tool-group switch-group">
+            <label for="shadowingToggle">Shadowing mode</label>
+            <input type="checkbox" id="shadowingToggle" />
+          </div>
+        </div>
+
+        <div class="quick-actions">
+          <button id="prevSubtitleBtn" class="ghost-btn">Previous Subtitle</button>
+          <button id="replaySubtitleBtn" class="secondary-btn">Replay Current Subtitle</button>
+          <button id="nextSubtitleBtn" class="ghost-btn">Next Subtitle</button>
+          <button id="saveSubtitleBtn" class="primary-btn">Save Subtitle</button>
+          <button id="markDifficultBtn" class="danger-btn">Mark Difficult</button>
+        </div>
+      </section>
+
+      <aside class="learning-sidebar">
+        <section class="card current-subtitle-card">
+          <div class="section-head">
+            <div>
+              <span class="mini-label">Current Cue</span>
+              <h3>Subtitle</h3>
+            </div>
+          </div>
+
+          <div class="subtitle-box english-box">
+            <div class="subtitle-box-label">English</div>
+            <p id="currentEnglish" class="subtitle-text">
+              Waiting for subtitle...
+            </p>
+          </div>
+
+          <div class="subtitle-box arabic-box">
+            <div class="subtitle-box-label">Arabic</div>
+            <p id="currentArabic" class="subtitle-text arabic-text">
+              الترجمة العربية ستظهر هنا
+            </p>
+          </div>
+
+          <div class="subtitle-meta">
+            <div class="meta-item">
+              <span class="meta-label">Start</span>
+              <span id="cueStartTime">--:--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">End</span>
+              <span id="cueEndTime">--:--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Repeats done</span>
+              <span id="repeatProgress">0</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card extra-tools-card">
+          <div class="section-head">
+            <div>
+              <span class="mini-label">Recommended Extras</span>
+              <h3>Practice Tools</h3>
+            </div>
+          </div>
+
+          <div class="extra-tool-list">
+            <div class="extra-tool-item">
+              <strong>Listen-only mode</strong>
+              <span>Try hiding Arabic first, listen, then reveal meaning.</span>
+            </div>
+
+            <div class="extra-tool-item">
+              <strong>Shadowing mode</strong>
+              <span>Auto pauses after repeated subtitle so you can speak after it.</span>
+            </div>
+
+            <div class="extra-tool-item">
+              <strong>Revision habit</strong>
+              <span>Save useful lines and revisit them daily.</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <section class="card upload-card">
+      <div class="section-head">
+        <div>
+          <span class="mini-label">Optional</span>
+          <h3>Load your own local files</h3>
+        </div>
+      </div>
+
+      <div class="upload-grid">
+        <div class="upload-item">
+          <label for="videoFileInput">Choose local video</label>
+          <input type="file" id="videoFileInput" accept="video/*" />
+        </div>
+
+        <div class="upload-item">
+          <label for="subtitleFileInput">Choose subtitle (.vtt)</label>
+          <input type="file" id="subtitleFileInput" accept=".vtt,text/vtt" />
+        </div>
+      </div>
+
+      <p class="upload-note">
+        You can keep the default files, or load your own movie clip and English subtitle track.
+      </p>
+    </section>
+
+    <section class="card saved-card" id="savedSection">
+      <div class="section-head">
+        <div>
+          <span class="mini-label">Revision Area</span>
+          <h3>Saved Subtitles</h3>
+        </div>
+
+        <div class="saved-actions">
+          <button id="clearSavedBtn" class="ghost-btn">Clear All</button>
+        </div>
+      </div>
+
+      <div id="savedList" class="saved-list">
+        <div class="empty-state">
+          No saved subtitles yet. Start the video and click "Save Subtitle".
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="script.js"></script>
+</body>
+</html>
