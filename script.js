@@ -1,5 +1,4 @@
 const video = document.getElementById("learningVideo");
-const englishTrackElement = document.getElementById("englishTrack");
 
 const currentEnglishEl = document.getElementById("currentEnglish");
 const currentArabicEl = document.getElementById("currentArabic");
@@ -53,6 +52,7 @@ let shadowPauseTimeout = null;
 
 let youtubePlayer = null;
 let currentSourceMode = "direct";
+let currentSubtitleBlobUrl = null;
 
 const arabicDictionary = {
   "how are you?": "إزيك؟ / عامل إيه؟",
@@ -345,9 +345,29 @@ function goToCueByIndex(index) {
   video.play();
 }
 
-function setupTrack() {
-  if (!video.textTracks || !video.textTracks.length) {
-    console.warn("No text tracks found.");
+function clearAllTracks() {
+  const trackElements = video.querySelectorAll("track");
+  trackElements.forEach((track) => track.remove());
+
+  for (let i = 0; i < video.textTracks.length; i++) {
+    video.textTracks[i].mode = "disabled";
+  }
+
+  textTrack = null;
+  cues = [];
+  currentCue = null;
+  currentCueIndex = -1;
+  activeCueId = null;
+  repeatCycleCount = 0;
+  repeatProgressEl.textContent = "0";
+  updateCueDisplay(null);
+}
+
+function setupTrackFromElement(trackElement) {
+  const loadedTrack = trackElement.track;
+
+  if (!loadedTrack) {
+    console.warn("Track object not available.");
     return;
   }
 
@@ -355,7 +375,7 @@ function setupTrack() {
     video.textTracks[i].mode = "disabled";
   }
 
-  textTrack = video.textTracks[0];
+  textTrack = loadedTrack;
   textTrack.mode = "showing";
 
   cues = Array.from(textTrack.cues || []);
@@ -367,11 +387,41 @@ function setupTrack() {
 
   textTrack.oncuechange = () => {
     const activeCues = textTrack.activeCues;
-
     if (activeCues && activeCues.length > 0) {
       handleCueChange(activeCues[0]);
     }
   };
+}
+
+function attachSubtitleFromText(subtitleText) {
+  clearAllTracks();
+
+  if (currentSubtitleBlobUrl) {
+    URL.revokeObjectURL(currentSubtitleBlobUrl);
+    currentSubtitleBlobUrl = null;
+  }
+
+  const subtitleBlob = new Blob([subtitleText], { type: "text/vtt" });
+  currentSubtitleBlobUrl = URL.createObjectURL(subtitleBlob);
+
+  const trackEl = document.createElement("track");
+  trackEl.kind = "subtitles";
+  trackEl.label = "English";
+  trackEl.srclang = "en";
+  trackEl.src = currentSubtitleBlobUrl;
+  trackEl.default = true;
+
+  trackEl.addEventListener("load", () => {
+    setupTrackFromElement(trackEl);
+    console.log("Subtitle track loaded successfully.");
+  });
+
+  trackEl.addEventListener("error", () => {
+    console.error("Subtitle track failed to load.");
+    alert("Subtitle track failed to load.");
+  });
+
+  video.appendChild(trackEl);
 }
 
 function handleAutoRepeatLogic() {
@@ -544,25 +594,6 @@ function loadVideoFromUrl() {
   alert("This link is not recognized as a YouTube link or a direct video file link like .mp4");
 }
 
-function attachSubtitleFromText(subtitleText) {
-  const subtitleBlob = new Blob([subtitleText], { type: "text/vtt" });
-  const objectURL = URL.createObjectURL(subtitleBlob);
-
-  englishTrackElement.removeAttribute("src");
-  englishTrackElement.src = objectURL;
-
-  setMode("direct");
-  video.load();
-
-  const handleLoaded = () => {
-    setTimeout(() => {
-      setupTrack();
-    }, 200);
-  };
-
-  video.addEventListener("loadedmetadata", handleLoaded, { once: true });
-}
-
 function initControls() {
   playbackRateSelect.addEventListener("change", () => {
     if (currentSourceMode === "direct") {
@@ -617,12 +648,6 @@ function initControls() {
     video.playbackRate = Number(playbackRateSelect.value);
   });
 
-  video.addEventListener("loadeddata", () => {
-    if (currentSourceMode === "direct") {
-      setupTrack();
-    }
-  });
-
   videoFileInput.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -632,9 +657,14 @@ function initControls() {
     video.src = objectURL;
     video.load();
 
-    setTimeout(() => {
-      setupTrack();
-    }, 300);
+    if (currentSubtitleBlobUrl) {
+      setTimeout(() => {
+        const existingTrack = video.querySelector("track");
+        if (existingTrack) {
+          setupTrackFromElement(existingTrack);
+        }
+      }, 300);
+    }
   });
 
   subtitleFileInput.addEventListener("change", async (event) => {
@@ -651,7 +681,7 @@ function initControls() {
       }
 
       attachSubtitleFromText(subtitleText);
-      alert("Subtitle file loaded successfully.");
+      alert("Subtitle file loaded successfully. If your subtitle starts later in the movie, move the video time forward.");
     } catch (error) {
       console.error(error);
       alert("Failed to load subtitle file.");
@@ -664,13 +694,7 @@ function initControls() {
 function init() {
   renderSavedSubtitles();
   updateStats();
-
-  if (video.readyState >= 1) {
-    setupTrack();
-  } else {
-    video.addEventListener("loadedmetadata", setupTrack, { once: true });
-  }
-
+  updateCueDisplay(null);
   initControls();
 }
 
