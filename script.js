@@ -295,7 +295,6 @@ function handleCueChange(cue) {
   if (!cue) {
     currentCue = null;
     currentCueIndex = -1;
-    updateCueDisplay(null);
     return;
   }
 
@@ -352,13 +351,23 @@ function setupTrack() {
     return;
   }
 
+  for (let i = 0; i < video.textTracks.length; i++) {
+    video.textTracks[i].mode = "disabled";
+  }
+
   textTrack = video.textTracks[0];
-  textTrack.mode = "hidden";
+  textTrack.mode = "showing";
 
   cues = Array.from(textTrack.cues || []);
 
+  console.log("Loaded cues:", cues.length);
+  if (cues.length > 0) {
+    console.log("First cue starts at:", cues[0].startTime, "seconds");
+  }
+
   textTrack.oncuechange = () => {
     const activeCues = textTrack.activeCues;
+
     if (activeCues && activeCues.length > 0) {
       handleCueChange(activeCues[0]);
     }
@@ -439,7 +448,10 @@ function setMode(mode) {
   if (mode === "youtube") {
     html5PlayerWrap.classList.add("hidden");
     youtubePlayerWrap.classList.remove("hidden");
+
     video.pause();
+    currentCue = null;
+    currentCueIndex = -1;
     updateCueDisplay(null);
   } else {
     youtubePlayerWrap.classList.add("hidden");
@@ -532,6 +544,25 @@ function loadVideoFromUrl() {
   alert("This link is not recognized as a YouTube link or a direct video file link like .mp4");
 }
 
+function attachSubtitleFromText(subtitleText) {
+  const subtitleBlob = new Blob([subtitleText], { type: "text/vtt" });
+  const objectURL = URL.createObjectURL(subtitleBlob);
+
+  englishTrackElement.removeAttribute("src");
+  englishTrackElement.src = objectURL;
+
+  setMode("direct");
+  video.load();
+
+  const handleLoaded = () => {
+    setTimeout(() => {
+      setupTrack();
+    }, 200);
+  };
+
+  video.addEventListener("loadedmetadata", handleLoaded, { once: true });
+}
+
 function initControls() {
   playbackRateSelect.addEventListener("change", () => {
     if (currentSourceMode === "direct") {
@@ -603,7 +634,7 @@ function initControls() {
 
     setTimeout(() => {
       setupTrack();
-    }, 400);
+    }, 300);
   });
 
   subtitleFileInput.addEventListener("change", async (event) => {
@@ -619,16 +650,8 @@ function initControls() {
         subtitleText = convertSrtToVtt(subtitleText);
       }
 
-      const subtitleBlob = new Blob([subtitleText], { type: "text/vtt" });
-      const objectURL = URL.createObjectURL(subtitleBlob);
-
-      englishTrackElement.src = objectURL;
-      setMode("direct");
-      video.load();
-
-      setTimeout(() => {
-        setupTrack();
-      }, 400);
+      attachSubtitleFromText(subtitleText);
+      alert("Subtitle file loaded successfully.");
     } catch (error) {
       console.error(error);
       alert("Failed to load subtitle file.");
