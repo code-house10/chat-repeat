@@ -113,6 +113,42 @@ function getArabicTranslation(englishText) {
   return `ترجمة سياقية تقريبية: ${clean}`;
 }
 
+function srtTimeToVttTime(timeString) {
+  return timeString.replace(",", ".");
+}
+
+function convertSrtToVtt(srtText) {
+  const normalized = srtText.replace(/\r+/g, "").trim();
+  const lines = normalized.split("\n");
+  const output = ["WEBVTT", ""];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (!line) {
+      output.push("");
+      continue;
+    }
+
+    if (/^\d+$/.test(line)) {
+      continue;
+    }
+
+    if (line.includes("-->")) {
+      const convertedTiming = line.replace(
+        /(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/g,
+        (_, start, end) => `${srtTimeToVttTime(start)} --> ${srtTimeToVttTime(end)}`
+      );
+      output.push(convertedTiming);
+      continue;
+    }
+
+    output.push(line);
+  }
+
+  return output.join("\n");
+}
+
 function getSavedSubtitles() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
@@ -422,7 +458,7 @@ function loadDirectVideo(url) {
   cues = [];
   updateCueDisplay(null);
 
-  alert("Direct video loaded. For full subtitle learning features, also load a matching .vtt subtitle file.");
+  alert("Direct video loaded. For full subtitle learning features, also load a matching .vtt or .srt subtitle file.");
 }
 
 function createOrLoadYouTubePlayer(videoId) {
@@ -570,19 +606,33 @@ function initControls() {
     }, 400);
   });
 
-  subtitleFileInput.addEventListener("change", (event) => {
+  subtitleFileInput.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const objectURL = URL.createObjectURL(file);
+    const fileName = file.name.toLowerCase();
 
-    englishTrackElement.src = objectURL;
-    setMode("direct");
-    video.load();
+    try {
+      let subtitleText = await file.text();
 
-    setTimeout(() => {
-      setupTrack();
-    }, 400);
+      if (fileName.endsWith(".srt")) {
+        subtitleText = convertSrtToVtt(subtitleText);
+      }
+
+      const subtitleBlob = new Blob([subtitleText], { type: "text/vtt" });
+      const objectURL = URL.createObjectURL(subtitleBlob);
+
+      englishTrackElement.src = objectURL;
+      setMode("direct");
+      video.load();
+
+      setTimeout(() => {
+        setupTrack();
+      }, 400);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to load subtitle file.");
+    }
   });
 
   loadVideoUrlBtn.addEventListener("click", loadVideoFromUrl);
